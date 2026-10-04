@@ -1,0 +1,39 @@
+# TEMPORARY test harness for the fork preview, never part of an upstream PR.
+# Builds the image natively per platform and compares it at runtime with the
+# published thomx/fr24feed-piaware:2.8.0 on the same runner.
+name: Runtime test (fork only)
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  runtime:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: linux/amd64, os: ubuntu-22.04 }
+          - { arch: linux/arm/v7, os: ubuntu-22.04-arm }
+          - { arch: linux/arm64, os: ubuntu-22.04-arm }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.arch }}
+          load: true
+          tags: candidate:test
+      - name: Test reference and candidate
+        run: |
+          .github/runtime-test/imagetest.sh thomx/fr24feed-piaware:2.8.0 "${{ matrix.arch }}" > ref.txt 2>&1 || true
+          .github/runtime-test/imagetest.sh candidate:test "${{ matrix.arch }}" > new.txt 2>&1 || true
+          echo "===== reference"; cat ref.txt
+          echo "===== candidate"; cat new.txt
+          echo "===== diff (reference -> candidate)"; diff ref.txt new.txt || true
+      - uses: actions/upload-artifact@v7
+        with:
+          name: runtime-${{ strategy.job-index }}
+          path: "*.txt"
